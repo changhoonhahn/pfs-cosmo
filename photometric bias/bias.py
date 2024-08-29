@@ -157,16 +157,16 @@ def main():
             ra,dec = Mask.area(i)
             if (max(ra)-min(ra)>300):
                 file = "tract_%s_left.fits"%(i)
-                command = "venice-4.0.3/bin/venice -r -xmin %s -xmax %s -ymin %s -ymax %s -coord spher -o mask/tract_%s_left.fits"%(0, min(ra), min(dec), max(dec),i)
+                command = "HSC-SSP_brightStarMask_Arcturus/venice-4.0.3/bin/venice -r -xmin %s -xmax %s -ymin %s -ymax %s -coord spher -o mask/tract_%s_left.fits"%(0, min(ra), min(dec), max(dec),i)
                 os.system(command)
 
-                command1 = "venice-4.0.3/bin/venice -m reg/masks_all.reg -cat mask/tract_%s_left.fits -xcol ra -ycol dec -f all -flagName isOutsideMask -o mask/tract_%s_flagged_left.fits"%(i,i)
+                command1 = "HSC-SSP_brightStarMask_Arcturus/-4.0.3/bin/venice -m reg/masks_all.reg -cat mask/tract_%s_left.fits -xcol ra -ycol dec -f all -flagName isOutsideMask -o mask/tract_%s_flagged_left.fits"%(i,i)
                 os.system(command1)
                 
-                command = "venice-4.0.3/bin/venice -r -xmin %s -xmax %s -ymin %s -ymax %s -coord spher -o mask/tract_%s_right.fits"%(max(ra), 360, min(dec), max(dec),i)
+                command = "HSC-SSP_brightStarMask_Arcturus/-4.0.3/bin/venice -r -xmin %s -xmax %s -ymin %s -ymax %s -coord spher -o mask/tract_%s_right.fits"%(max(ra), 360, min(dec), max(dec),i)
                 os.system(command)
                 
-                command1 = "venice-4.0.3/bin/venice -m reg/masks_all.reg -cat mask/tract_%s_right.fits -xcol ra -ycol dec -f all -flagName isOutsideMask -o mask/tract_%s_flagged_right.fits"%(i,i)
+                command1 = "HSC-SSP_brightStarMask_Arcturus/-4.0.3/bin/venice -m reg/masks_all.reg -cat mask/tract_%s_right.fits -xcol ra -ycol dec -f all -flagName isOutsideMask -o mask/tract_%s_flagged_right.fits"%(i,i)
                 os.system(command1)
 
                 hdu = fits.open("mask/tract_%s_flagged_left.fits" %i)
@@ -193,9 +193,9 @@ def main():
             
             
             else:
-                command = "venice-4.0.3/bin/venice -r -xmin %s -xmax %s -ymin %s -ymax %s -coord spher -o mask/tract_%s.fits"%(min(ra), max(ra), min(dec), max(dec),i)
+                command = "HSC-SSP_brightStarMask_Arcturus/-4.0.3/bin/venice -r -xmin %s -xmax %s -ymin %s -ymax %s -coord spher -o mask/tract_%s.fits"%(min(ra), max(ra), min(dec), max(dec),i)
                 os.system(command)
-                command1 = "venice-4.0.3/bin/venice -m reg/masks_all.reg -cat mask/tract_%s.fits -xcol ra -ycol dec -f all -flagName isOutsideMask -o mask/tract_%s_flagged.fits"%(i,i)
+                command1 = "HSC-SSP_brightStarMask_Arcturus/-4.0.3/bin/venice -m reg/masks_all.reg -cat mask/tract_%s.fits -xcol ra -ycol dec -f all -flagName isOutsideMask -o mask/tract_%s_flagged.fits"%(i,i)
                 os.system(command1)
         else:
             print("already have mask")
