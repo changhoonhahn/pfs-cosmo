@@ -64,7 +64,7 @@ def main():
     global args,release_version,prefix,prefix2,area, tractlist,sql
 
     args = parser.parse_args()
-    #sql         =   args.__dict__['sql-file'].read()
+    sql         =   args.__dict__['sql-file'].read()
     release_year   =   "s21"
     release_version =   'dr4-citus'
     prefix  =   'database/%s%s/sql_all' %(release_year,diffver)
