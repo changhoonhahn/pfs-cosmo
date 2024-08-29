@@ -9,7 +9,7 @@ from multiprocessing import Pool
 filename = "output_test.fits"
 sql = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
 def process_file(sql_num):
-    file = f"../../../mnt/data_cat5/yuka/database/s21_colorterm/sql_all/{num}_bias.fits"
+    file = f"database/s21_colorterm/sql_all/{sql_num}_bias.fits"
     print(file)
     if os.path.exists(file):
         with fits.open(file) as hdu:
@@ -43,8 +43,8 @@ def process_file(sql_num):
             quality = (i_mag > 22.5) & (i_mag < 24.0)
             redshift = ((g_mag - r_mag) < 0.15) | ((i_mag - z_mag) > 2.0 * (g_mag - r_mag) - 0.15)
             galaxy = (i_cmodel - i_psf < -0.08)
-            location = (210.0 < ra) & (ra < 215.0) & (dec < 1.0) & (dec > -1.0)
-            selection = quality & redshift & galaxy & location
+            #location = (210.0 < ra) & (ra < 215.0) & (dec < 1.0) & (dec > -1.0)
+            selection = quality & redshift & galaxy
 
             return ra[selection], dec[selection], tract[selection], id[selection], \
                    g_mag[selection], r_mag[selection], i_mag[selection], z_mag[selection], y_mag[selection]
