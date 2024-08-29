@@ -30,7 +30,7 @@ area = hp.nside2pixarea(nside,degrees=True)
 
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--file", nargs ="*", help = "photometry-data filename")
+    parser.add_argument("--file", default ="output_test.fits", help = "photometry-data filename")
     parser.add_argument("--photometry", nargs = "*", choices = ["gseeing", "rseeing", "iseeing", "zseeing", "yseeing", "gdepth", "rdepth", "idepth", "zdepth", "ydepth", "star", "star1", "star2", "star3", "extinction"], help = "properties")
     parser.add_argument('--user', '-u', required=True, help='specify your STARS account')
     parser.add_argument('--password-env', default='HSC_SSP_CAS_PASSWORD', help='environment variable for STARS')
@@ -111,7 +111,9 @@ def main():
         hdu = fits.open(filename)
         data = hdu[1].data
     else:
-        selection.target_selection(filename,list(tractlist))
+        command = "python target_GPU.py"
+        os.system(command)
+        #selection.target_selection(filename,list(tractlist))
         hdu = fits.open(filename)
         data = hdu[1].data
 
