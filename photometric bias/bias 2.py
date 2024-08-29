@@ -21,8 +21,8 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 version =   20190924.1
 args    =   None
-doDownload  =   False
-doUnzip =   False
+doDownload  =   True
+doUnzip =   True
 starUnzip = False
 diffver =   '-colorterm'
 nside = 256
