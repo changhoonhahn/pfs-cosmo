@@ -15,6 +15,7 @@ import urllib.request, urllib.error, urllib.parse
 import astropy.io.ascii as ascii
 import hscReleaseQuery as HQR
 import target_GPU as selection
+import target_selection as tract_selection
 import sys,os
 import mask_dot as Mask
 from matplotlib.backends.backend_pdf import PdfPages
@@ -111,11 +112,16 @@ def main():
         hdu = fits.open(filename)
         data = hdu[1].data
     else:
-        command = "python target_GPU.py"
-        os.system(command)
-        #selection.target_selection(filename,list(tractlist))
-        hdu = fits.open(filename)
-        data = hdu[1].data
+        if (tractlist==''):
+            command = "python target_GPU.py"
+            os.system(command)
+            #selection.target_selection(filename,list(tractlist))
+            hdu = fits.open(filename)
+            data = hdu[1].data
+        else:
+            selection.target_selection(filename,list(tractlist))
+            hdu = fits.open(filename)
+            data = hdu[1].data            
 
     target_tract = data["tract"]
     target_ra = (data["ra"]%360)/180*math.pi
@@ -153,21 +159,21 @@ def main():
         os.system("mkdir -p mask")
 
     for i in tractlist:
-        outfname    =   os.path.join('../../../mnt/data_cat5/yuka/mask/tract_%s.fits' %(i))
-        if not (os.path.exists('../../../mnt/data_cat5/yuka/mask/tract_%s.fits' %(i))| os.path.exists('../../../mnt/data_cat5/yuka/mask/tract_%s_left.fits' %(i))):
+        outfname    =   os.path.join('mask/tract_%s.fits' %(i))
+        if not (os.path.exists('mask/tract_%s.fits' %(i))| os.path.exists('mask/tract_%s_left.fits' %(i))):
             ra,dec = Mask.area(i)
             if (max(ra)-min(ra)>300):
                 file = "tract_%s_left.fits"%(i)
-                command = "venice-4.0.3/bin/venice -r -xmin %s -xmax %s -ymin %s -ymax %s -coord spher -o mask/tract_%s_left.fits"%(0, min(ra), min(dec), max(dec),i)
+                command = "HSC-SSP_brightStarMask_Arcturus/venice-4.0.3/bin/venice -r -xmin %s -xmax %s -ymin %s -ymax %s -coord spher -o mask/tract_%s_left.fits"%(0, min(ra), min(dec), max(dec),i)
                 os.system(command)
 
-                command1 = "venice-4.0.3/bin/venice -m reg/masks_all.reg -cat mask/tract_%s_left.fits -xcol ra -ycol dec -f all -flagName isOutsideMask -o mask/tract_%s_flagged_left.fits"%(i,i)
+                command1 = "HSC-SSP_brightStarMask_Arcturus/venice-4.0.3/bin/venice -m reg/masks_all.reg -cat mask/tract_%s_left.fits -xcol ra -ycol dec -f all -flagName isOutsideMask -o mask/tract_%s_flagged_left.fits"%(i,i)
                 os.system(command1)
                 
-                command = "venice-4.0.3/bin/venice -r -xmin %s -xmax %s -ymin %s -ymax %s -coord spher -o mask/tract_%s_right.fits"%(max(ra), 360, min(dec), max(dec),i)
+                command = "HSC-SSP_brightStarMask_Arcturus/venice-4.0.3/bin/venice -r -xmin %s -xmax %s -ymin %s -ymax %s -coord spher -o mask/tract_%s_right.fits"%(max(ra), 360, min(dec), max(dec),i)
                 os.system(command)
                 
-                command1 = "venice-4.0.3/bin/venice -m reg/masks_all.reg -cat mask/tract_%s_right.fits -xcol ra -ycol dec -f all -flagName isOutsideMask -o mask/tract_%s_flagged_right.fits"%(i,i)
+                command1 = "HSC-SSP_brightStarMask_Arcturus/venice-4.0.3/bin/venice -m reg/masks_all.reg -cat mask/tract_%s_right.fits -xcol ra -ycol dec -f all -flagName isOutsideMask -o mask/tract_%s_flagged_right.fits"%(i,i)
                 os.system(command1)
 
                 hdu = fits.open("mask/tract_%s_flagged_left.fits" %i)
@@ -194,9 +200,9 @@ def main():
             
             
             else:
-                command = "venice-4.0.3/bin/venice -r -xmin %s -xmax %s -ymin %s -ymax %s -coord spher -o mask/tract_%s.fits"%(min(ra), max(ra), min(dec), max(dec),i)
+                command = "HSC-SSP_brightStarMask_Arcturus/venice-4.0.3/bin/venice -r -xmin %s -xmax %s -ymin %s -ymax %s -coord spher -o mask/tract_%s.fits"%(min(ra), max(ra), min(dec), max(dec),i)
                 os.system(command)
-                command1 = "venice-4.0.3/bin/venice -m reg/masks_all.reg -cat mask/tract_%s.fits -xcol ra -ycol dec -f all -flagName isOutsideMask -o mask/tract_%s_flagged.fits"%(i,i)
+                command1 = "HSC-SSP_brightStarMask_Arcturus/venice-4.0.3/bin/venice -m reg/masks_all.reg -cat mask/tract_%s.fits -xcol ra -ycol dec -f all -flagName isOutsideMask -o mask/tract_%s_flagged.fits"%(i,i)
                 os.system(command1)
         else:
             print("already have mask")
@@ -222,10 +228,10 @@ def main():
     healpix = np.array([])
     
     for tract in tractlist:
-        if os.path.exists("../../../mnt/data_cat5/yuka/database/s21-colorterm/tracts_all/%s_bias.fits" %tract):
+        if os.path.exists("database/s21-colorterm/tracts_all/%s_bias.fits" %tract):
         #if star density in property, get the location of stars in tract##############
             if ("star" in photometry):
-                hdu = fits.open("../../../mnt/data_cat5/yuka/database/s21-colorterm/tracts_all/%s_bias.fits" %tract)
+                hdu = fits.open("database/s21-colorterm/tracts_all/%s_bias.fits" %tract)
                 data = hdu[1].data
 
                 cmodel = data["meas_i_cmodel_mag"]
@@ -261,7 +267,7 @@ def main():
                 hdu.close()
             ###############################################################################
             #get galaxy property of all galaxy in tract
-            hdu = fits.open("../../../mnt/data_cat5/yuka/database/s21-colorterm/tracts_all/%s_bias.fits" %tract)
+            hdu = fits.open("database/s21-colorterm/tracts_all/%s_bias.fits" %tract)
             data1 = hdu[1].data
 
             global all_pixel
@@ -291,7 +297,7 @@ def main():
             healpix_range = np.unique(healpix_all)
 
             #mask dotsをhealpixelに分ける###########
-            hdu = fits.open("../../../mnt/data_cat5/yuka/mask/tract_%s_flagged.fits" %(tract))
+            hdu = fits.open("mask/tract_%s_flagged.fits" %(tract))
             data = hdu[1].data
             mask_ra = data["ra"]/180*math.pi
             mask_dec = math.pi/2 - data["dec"]/180*math.pi
@@ -364,7 +370,7 @@ def main():
     nam_all = tuple(nam + ["density" , "healpix"])
     print(nam_all)
     t = Table(val, names=nam_all)
-    t.write("../../../mnt/data_cat5/yuka/property.fits", format='fits', overwrite = True)
+    t.write("property.fits", format='fits', overwrite = True)
     
     #total_area = np.sum(eff_area)
 
@@ -510,7 +516,7 @@ def download(tract):
 
 def healpix_photometry(all_pixel, eff, tract, healpix, photo):
     if "seeing" in photo:
-        hdu = fits.open("../../../mnt/data_cat5/yuka/database/s21-colorterm/tracts_all/%s_bias.fits" %tract)
+        hdu = fits.open("database/s21-colorterm/tracts_all/%s_bias.fits" %tract)
         data = hdu[1].data
         if photo=="gseeing":
             g_size = data["gseeing"]
@@ -532,7 +538,7 @@ def healpix_photometry(all_pixel, eff, tract, healpix, photo):
         hdu.close()
 
     elif "depth" in photo:
-        hdu = fits.open("../../../mnt/data_cat5/yuka/database/s21-colorterm/tracts_all/%s_bias.fits" %tract)
+        hdu = fits.open("database/s21-colorterm/tracts_all/%s_bias.fits" %tract)
         data = hdu[1].data
         if photo == "gdepth":
             g_depth = data["g_depth"]
@@ -566,7 +572,7 @@ def healpix_photometry(all_pixel, eff, tract, healpix, photo):
         a = np.sum(star_pixel3 == healpix)/eff
 
     elif (photo == "extinction"):
-        hdu = fits.open('../../../mnt/data_cat5/yuka/csfd_ebv.fits')
+        hdu = fits.open('csfd_ebv.fits')
         data = hdu[1].data
         im=data["T"]
         m = np.ndarray.flatten(im)
