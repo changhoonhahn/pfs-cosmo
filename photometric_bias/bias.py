@@ -119,7 +119,7 @@ def main():
             hdu = fits.open(filename)
             data = hdu[1].data
         else:
-            selection.target_selection(filename,list(tractlist))
+            tract_selection.target_selection(filename,list(tractlist))
             hdu = fits.open(filename)
             data = hdu[1].data            
 
