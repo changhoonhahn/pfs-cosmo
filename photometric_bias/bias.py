@@ -19,20 +19,22 @@ import target_selection as tract_selection
 import sys,os
 import mask_dot as Mask
 from matplotlib.backends.backend_pdf import PdfPages
+from multiprocessing import Pool
 
 version =   20190924.1
 args    =   None
-doDownload  =   True
-doUnzip =   True
+doDownload  = False
+doUnzip =   False
 starUnzip = False
 diffver =   '-colorterm'
 nside = 256
 area = hp.nside2pixarea(nside,degrees=True)
+SQL = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
 
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--file", default ="output_test.fits", help = "photometry-data filename")
-    parser.add_argument("--photometry", nargs = "*", choices = ["gseeing", "rseeing", "iseeing", "zseeing", "yseeing", "gdepth", "rdepth", "idepth", "zdepth", "ydepth", "star", "star1", "star2", "star3", "extinction"], help = "properties")
+    #parser.add_argument("--photometry", nargs = "*", choices = ["gseeing", "rseeing", "iseeing", "zseeing", "yseeing", "gdepth", "rdepth", "idepth", "zdepth", "ydepth", "star", "star1", "star2", "star3", "extinction"], help = "properties")
     parser.add_argument('--user', '-u', required=True, help='specify your STARS account')
     parser.add_argument('--password-env', default='HSC_SSP_CAS_PASSWORD', help='environment variable for STARS')
     parser.add_argument('sql-file', type=argparse.FileType('r'), help='SQL file')
@@ -60,7 +62,7 @@ def main():
     #If only using parts of the whole HSC data
     parser.add_argument("--tracts", nargs = "*", help = "properties", default = '')
 
-    pdf = PdfPages("bias_i_meas_all.pdf")
+    pdf = PdfPages("bias_i_meas_new.pdf")
 
     global args,release_version,prefix,prefix2,area, tractlist,sql
 
@@ -75,12 +77,25 @@ def main():
     if not os.path.exists(prefix2):
         os.system('mkdir -p %s' %prefix2)
 
-    filename = args.file[0]
-    photometry = args.photometry
+    filename = args.file
+    #photometry = args.photometry
+    photometry = ["gseeing", "rseeing", "iseeing", "zseeing", "yseeing", "gdepth", "rdepth", "idepth", "zdepth", "ydepth", "star", "star1", "star2", "star3", "extinction"]
     tractlist = args.tracts
     ngroups = 1
 
-###################################################################    
+    property = {}
+    global rangex
+    rangex = {}
+    for photo in photometry:
+        #dict[photo] = data[photo]
+        property[photo] = []
+        
+    rangex["depth"] = np.linspace(24,28,51) #define xaxis for histogram
+    rangex["size"] = np.linspace(0.5,2.5,51)
+    rangex["extinction"] = np.linspace(0.0,5.0,51)
+    rangex["star"] = np.linspace(0.0,15000,21)
+
+        ###################################################################    
     #if no tracts, all tract in HSC database will be downloaded
     if (tractlist==''):
         tractname= 'fieldTractInfoS21.csv'
@@ -106,58 +121,17 @@ def main():
             print('unzipping group: %s' %ig)
             HQR.separateTracts(args, prefix,prefix2,ig,tractL)
 
-##################################################################    
-    #get the location of tha target galaxies
-    if os.path.exists(filename):
-        hdu = fits.open(filename)
-        data = hdu[1].data
-    else:
-        if (tractlist==''):
-            command = "python target_GPU.py"
-            os.system(command)
-            #selection.target_selection(filename,list(tractlist))
-            hdu = fits.open(filename)
-            data = hdu[1].data
-        else:
-            tract_selection.target_selection(filename,list(tractlist))
-            hdu = fits.open(filename)
-            data = hdu[1].data            
+    #################### get mask and all the healpixels that will be included in the analysis
 
-    target_tract = data["tract"]
-    target_ra = (data["ra"]%360)/180*math.pi
-    target_dec = math.pi/2 - data["dec"]/180*math.pi
-
-    hdu.close()
-    
-    ################################################################
-    #################################################################
-    #download mask from Arcturus
-    #for i in tractlist:
-        #outfname    =   os.path.join("mask",'tract_%s.fits' %(i))
-        #if os.path.exists(outfname):
-            #print('already have file for tract: %s' \
-                    #%i)
-            #continue
-        #ra,dec = Mask.area(str(i))
-        #command = "venice-4.0.3/bin/venice -r -xmin %s -xmax %s -ymin %s -ymax %s -coord spher -o tract_%s.fits"%(min(ra), max(ra), min(dec), max(dec),i)
-        #os.system(command)
-
-    #for i in tractlist:
-        #outfname    =   os.path.join("mask",'tract_%s_flagged.fits' %(i))
-        #if os.path.exists(outfname):
-            #print('already have file for tract: %s' \
-                    #%i)
-            #continue
-        #ra,dec = Mask.area(str(i))
-        #command1 = "venice-4.0.3/bin/venice -m reg/tracts/BrightStarMask-%s-HSC-I.reg -cat tract_%s.fits -xcol ra -ycol dec -f all -flagName isOutsideMask -o tract_%s_flagged.fits"%(i,i,i)
-        #os.system(command1)
-
-    #os.system("mkdir -p mask")
-    #os.system("mv tract*.fits mask")
+    eff_area = np.array([])
+    density = np.array([])
+    healpix = np.array([], int)
+    healpix_flags = np.array([], int)
+    mask_flags = np.array([])
+    flag = np.array([])
 
     if not os.path.exists("mask"):
         os.system("mkdir -p mask")
-
     for i in tractlist:
         outfname    =   os.path.join('mask/tract_%s.fits' %(i))
         if not (os.path.exists('mask/tract_%s.fits' %(i))| os.path.exists('mask/tract_%s_left.fits' %(i))):
@@ -171,8 +145,7 @@ def main():
                 os.system(command1)
                 
                 command = "HSC-SSP_brightStarMask_Arcturus/venice-4.0.3/bin/venice -r -xmin %s -xmax %s -ymin %s -ymax %s -coord spher -o mask/tract_%s_right.fits"%(max(ra), 360, min(dec), max(dec),i)
-                os.system(command)
-                
+                os.system(command)                
                 command1 = "HSC-SSP_brightStarMask_Arcturus/venice-4.0.3/bin/venice -m HSC-SSP_brightStarMask_Arcturus/reg/masks_all.reg -cat mask/tract_%s_right.fits -xcol ra -ycol dec -f all -flagName isOutsideMask -o mask/tract_%s_flagged_right.fits"%(i,i)
                 os.system(command1)
 
@@ -207,212 +180,208 @@ def main():
         else:
             print("already have mask")
 
-    #os.system("mkdir -p mask")
-    #os.system("mv tract*.fits mask")
-    ################################################################ 
+
+    for i in tractlist:
+        hdu = fits.open("mask/tract_%s_flagged.fits" %(i))
+        data = hdu[1].data
+        mask_ra = data["ra"]/180*math.pi
+        mask_dec = math.pi/2 - data["dec"]/180*math.pi
+        mask_flag = data["IsOutsideMask"]
+        healpix_mask = hp.ang2pix(nside,mask_dec,mask_ra)
+        hdu.close()
+
+        unique_values, counts = np.unique(healpix_mask, return_counts=True)
+        healpix_above_threshold = unique_values[counts > 16000]
+        healpix = np.concatenate((healpix, healpix_above_threshold))    ####exclude the healpixels that are on the edge of the tract
+
+        mask_condition = np.isin(healpix_mask, healpix_above_threshold)   ####exclude flags that are on the edge healpix
+        mask_flags = np.concatenate((mask_flags, mask_flag[mask_condition]))
+        healpix_flags = np.concatenate((healpix_flags, healpix_mask[mask_condition])) #healpix of the selected flags
+	
+    print("Get the healpixel for the observation area")    
+    healpix = np.unique(healpix)    ############################### The entire healpix
+
     
-    property = {}
-    global rangex
-    rangex = {}
-    for photo in photometry:
-        #dict[photo] = data[photo]
-        property[photo] = []
-        
-    rangex["depth"] = np.linspace(24,28,51) #define xaxis for histogram
-    rangex["size"] = np.linspace(0.5,2.5,51)
-    rangex["extinction"] = np.linspace(0.0,5.0,51)
-    rangex["star"] = np.linspace(0.0,15000,21)
+    npix = hp.nside2npix(nside)
+    # select flags outside stellar mask
+    pixels_flagged = healpix_flags[mask_flags == 1.0]
+    pixel_count = np.bincount(pixels_flagged, minlength=npix) # number of flags with flag=1 (for the entire healpixel)
 
-    eff_area = []
-    density = []
-    healpix = np.array([])
-    
-    for tract in tractlist:
-        if os.path.exists("database/s21-colorterm/tracts_all/%s_bias.fits" %tract):
-        #if star density in property, get the location of stars in tract##############
-            if ("star" in photometry):
-                hdu = fits.open("database/s21-colorterm/tracts_all/%s_bias.fits" %tract)
-                data = hdu[1].data
+    all_count = np.bincount(healpix_flags, minlength=npix) # number of flags for the entire healpixel
 
-                cmodel = data["meas_i_cmodel_mag"]
-                psf = data["meas_i_psfflux_mag"]
-                
+    eff_area = pixel_count[all_count>0]/all_count[all_count>0]*area  ############################## effective area of the entire healpixel
 
-                ext =(cmodel - psf > -0.08)&(cmodel < 22.0)
-                ext1 =(cmodel - psf > -0.05)&(cmodel < 22.0)
-                ext2 =(cmodel - psf > -0.03)&(cmodel < 22.0)
-                ext3 =(cmodel - psf > -0.01)&(cmodel < 22.0)
-                
-                #location
-                star_ra = (data["i_ra"][ext]%360)/180*math.pi
-                star_dec = math.pi/2 - data["i_dec"][ext]/180*math.pi
-
-                star_ra1 = (data["i_ra"][ext1]%360)/180*math.pi
-                star_dec1 = math.pi/2 - data["i_dec"][ext1]/180*math.pi
-
-                star_ra2 = (data["i_ra"][ext2]%360)/180*math.pi
-                star_dec2 = math.pi/2 - data["i_dec"][ext2]/180*math.pi
-
-                star_ra3 = (data["i_ra"][ext3]%360)/180*math.pi
-                star_dec3 = math.pi/2 - data["i_dec"][ext3]/180*math.pi
-
-            
-
-                global star_pixel, star_pixel1, star_pixel2, star_pixel3
-                star_pixel = hp.ang2pix(nside, star_dec, star_ra)
-                star_pixel1 = hp.ang2pix(nside, star_dec1, star_ra1)
-                star_pixel2 = hp.ang2pix(nside, star_dec2, star_ra2)
-                star_pixel3 = hp.ang2pix(nside, star_dec3, star_ra3)
-                
-                hdu.close()
-            ###############################################################################
-            #get galaxy property of all galaxy in tract
-            hdu = fits.open("database/s21-colorterm/tracts_all/%s_bias.fits" %tract)
-            data1 = hdu[1].data
-
-            global all_pixel
-            #location
-            all_ra = (data1["i_ra"]%360)/180*math.pi
-            all_dec = math.pi/2 - data1["i_dec"]/180*math.pi
-            all_pixel = hp.ang2pix(nside, all_dec, all_ra)
-        
-            #photometry
-            g_mag = data1["meas_g_cmodel_mag"]
-            r_mag = data1["meas_r_cmodel_mag"]
-            i_mag = data1["meas_i_cmodel_mag"]
-            z_mag = data1["meas_z_cmodel_mag"]
-            y_mag = data1["meas_y_cmodel_mag"]
-
-            g_err = data1["meas_g_cmodel_magerr"]
-            r_err = data1["meas_r_cmodel_magerr"]
-            i_err = data1["meas_i_cmodel_magerr"]
-            z_err = data1["meas_z_cmodel_magerr"]
-            y_err = data1["meas_y_cmodel_magerr"]
-
-            hdu.close()
-            ####################################################################################
-            #target galaxyと all galaxyをhealpixelに分ける
-            healpix_all = hp.ang2pix(nside,all_dec,all_ra)
-            healpix_target = hp.ang2pix(nside,target_dec[target_tract == float(tract)],target_ra[target_tract == float(tract)])
-            healpix_range = np.unique(healpix_all)
-
-            #mask dotsをhealpixelに分ける###########
-            hdu = fits.open("mask/tract_%s_flagged.fits" %(tract))
-            data = hdu[1].data
-            mask_ra = data["ra"]/180*math.pi
-            mask_dec = math.pi/2 - data["dec"]/180*math.pi
-            mask_flag = data["IsOutsideMask"]
-            healpix_mask = hp.ang2pix(nside,mask_dec,mask_ra)
-            hdu.close()
-            ######################################################################################
-
-            #端のpixelを選ぶ
-            ra_edge = (np.array(Mask.area(np.array(tract).astype(np.int64)))[0]%360)/180*math.pi
-            dec_edge = math.pi/2-np.array(Mask.area(np.array(tract).astype(np.int64)))[1]/180*math.pi
-            ra_ = np.linspace(np.min(ra_edge),np.max(ra_edge),100)
-            dec_ = np.linspace(np.min(dec_edge),np.max(dec_edge),100)
-            dd,rr = np.meshgrid(dec_,ra_)
-            r = rr.flatten()
-            d = dd.flatten()
-            #print(r)
-
-            r1 = ((sorted(ra_edge)[-2]-0.0001 < r) & (r < np.max(r) + 0.0001))
-            r2 = ((sorted(ra_edge)[1]+0.0001 > r) & (r > np.min(r)-0.0001))
-            d1 = ((sorted(dec_edge)[-2]-0.0001 < d) & (d < np.max(d) + 0.0001))
-            d2 = ((sorted(dec_edge)[1] + 0.0001 > d) & (d > np.min(d) - 0.0001))
-
-            #print(d[((sorted(ra_edge)[-2]-0.0002 < r) & (r < np.max(r) + 0.0002))|((sorted(dec_edge)[-2] < d) & (d < np.max(d)))
-                       #|((sorted(ra_edge)[1]+0.0002 > r) & (r > np.min(r)-0.0002))|((sorted(dec_edge)[1] > d) & (d > np.min(d)))])
-            healpix_edge = hp.ang2pix(nside, d[(r1|r2|d1|d2)], r[(r1|d1|r2|d2)])
-            if (- np.min(ra_edge) + np.max(ra_edge)>3):
-                ra_ = np.linspace(np.max(ra_edge) - 2*math.pi,np.min(ra_edge),100)
-                dec_ = np.linspace(np.min(dec_edge),np.max(dec_edge),100)
-                dd,rr = np.meshgrid(dec_,ra_)
-                r = rr.flatten()
-                d = dd.flatten()
-
-                r1 = ((sorted(ra_edge)[1]-0.0001 < r) & (r < np.max(r) + 0.0001))
-                r2 = ((sorted(ra_edge)[-2]-2*math.pi+0.0001 > r) & (r > np.min(r)-0.0001))
-                d1 = ((sorted(dec_edge)[-2]-0.0001 < d) & (d < np.max(d) + 0.0001))
-                d2 = ((sorted(dec_edge)[1] + 0.0001 > d) & (d > np.min(d) - 0.0001))
-
-            #print(d[((sorted(ra_edge)[-2]-0.0002 < r) & (r < np.max(r) + 0.0002))|((sorted(dec_edge)[-2] < d) & (d < np.max(d)))
-                       #|((sorted(ra_edge)[1]+0.0002 > r) & (r > np.min(r)-0.0002))|((sorted(dec_edge)[1] > d) & (d > np.min(d)))])
-                r = r+(r<0)*2*math.pi
-        #print(r[(r1|d1|r2|d2)])
-                healpix_edge = hp.ang2pix(nside, d[(r1|r2|d1|d2)], r[(r1|d1|r2|d2)])
-        
-            # Calculate effective area for each pixel
-            eff_area = np.sum(mask_flag[:, np.newaxis] * area / np.sum(mask_flag, axis=0), axis=0)
-
-            # Find pixels that are in healpix_edge
-            in_edge = np.isin(healpix_range, healpix_edge)
-
-            # Calculate density for each pixel
-            dens = np.sum(healpix_target[:, np.newaxis] == healpix_range, axis=0) / eff_area
-            dens[in_edge] = 0  # Set density to 0 for pixels in healpix_edge
-
-            # Filter out pixels with zero effective area
-            valid_indices = eff_area > 0
-            healpix = healpix_range[valid_indices]
-            density = dens[valid_indices]
-
-            # Process photometry for each valid pixel
-            for photo in photometry:
-                property[photo].extend(healpix_photometry(all_pixel, eff_area[valid_indices], tract, healpix, photo))
-
-
-    val = list(property.values())
-    val.append(density)
-    val.append(list(healpix))
-    print(val)
-    nam = list(property.keys())
-    nam_all = tuple(nam + ["density" , "healpix"])
-    print(nam_all)
-    t = Table(val, names=nam_all)
-    t.write("property.fits", format='fits', overwrite = True)
-    
-    #total_area = np.sum(eff_area)
-
+    #flag the healpixels that are on the edge of the observation area
     ra1 = np.array([])
     dec1 = np.array([])
-    data = hdu2[1].data
     mask_edge = np.array([True]*len(healpix))
     for healpy in healpix:
+        #location = hp.pix2ang(256, int(healpy), lonlat=True)
         location = hp.pix2ang(256, int(healpy))
         ra1 = np.append(ra1, location[1])
         dec1 = np.append(dec1, location[0])
 
+    #ra1 = ra1 - (ra1>300)*360
+    #autumn = ((ra1>30)&(ra1<38) &(dec1<2.6)&(dec1 > -6.0))|((ra1<27.5)&(ra1>-27)&(dec1>-1.1)&(dec1<2.62))
+    #spring = (ra1<217.7)&(ra1>130)&(dec1<3.0)&(dec1>-1.67)
+    #north = (dec1 > 42.7)&(dec1<44) &(ra1 >205) &(ra1<245)
     ra1 = ra1 - 2*math.pi*(ra1>5)
     autumn = ((ra1>0.52)&(ra1<0.68) &(dec1<1.69)&(dec1 > 1.525))|((ra1<0.48)&(ra1>-0.5)&(dec1>1.525)&(dec1<1.59))
     spring = (ra1<3.8)&(ra1>2.25)&(dec1<1.6)&(dec1>1.5)
     north = (dec1 > 0.8)&(dec1<0.825) &(ra1 >3.5) &(ra1<4.35)
     mask_edge = autumn | spring | north
+    print(ra1)
+    print(dec1)
 
-    density = np.array(density)
+    #######################################
+    #get the location of the target galaxies
+    if os.path.exists(filename):
+        hdu = fits.open(filename)
+        data = hdu[1].data
+    else:
+        if (args.tracts==''):
+            command = f"python target_GPU.py --file {filename}"
+            os.system(command)
+            #selection.target_selection(filename,list(tractlist))
+            hdu = fits.open(filename)
+            data = hdu[1].data
+        else:
+            tract_selection.target_selection(filename,list(tractlist))
+            hdu = fits.open(filename)
+            data = hdu[1].data            
+
+    target_tract = data["tract"]
+    target_ra = (data["ra"]%360)/180*math.pi
+    target_dec = math.pi/2 - data["dec"]/180*math.pi
+    target_healpix = hp.ang2pix(nside,target_dec,target_ra)
+    print("Get the location of the target galaxies")
+    hdu.close()
+
+    number_target = np.bincount(target_healpix, minlength=npix)
+    density = number_target[healpix]/eff_area                      ################### density of healpixels
+
+
+
+    ################################################################
+    #get the location and the photometry of the entire objects
+    if (args.tracts==''):
+        ra_all, dec_all, i_cmodel, i_psf, g_seeing, r_seeing, i_seeing, z_seeing, y_seeing, g_depth, r_depth, i_depth, z_depth, y_depth = Get_Photometry(SQL)
+    else:
+        ra_all, dec_all, i_cmodel, i_psf, g_seeing, r_seeing, i_seeing, z_seeing, y_seeing, g_depth, r_depth, i_depth, z_depth, y_depth = Get_Photometry_tract(tractlist)
+
+    ra_all = (ra_all%360)/180*math.pi
+    dec_all = math.pi/2 - dec_all/180*math.pi
+    healpix_all = hp.ang2pix(nside, dec_all, ra_all) ######### get the healpixel for entire object
+    all_count = np.bincount(healpix_all, minlength=npix)    ###### number of object in each healpixel
+
+    property["gseeing"] = healpix_photometry(healpix_all, g_seeing, healpix, all_count)
+    property["rseeing"] = healpix_photometry(healpix_all, r_seeing, healpix, all_count)
+    property["iseeing"] = healpix_photometry(healpix_all, i_seeing, healpix, all_count)
+    property["zseeing"] = healpix_photometry(healpix_all, z_seeing, healpix, all_count)
+    property["yseeing"] = healpix_photometry(healpix_all, y_seeing, healpix, all_count)
+
+    property["gdepth"] = healpix_photometry(healpix_all, g_depth, healpix, all_count)
+    property["rdepth"] = healpix_photometry(healpix_all, r_depth, healpix, all_count)
+    property["idepth"] = healpix_photometry(healpix_all, i_depth, healpix, all_count)
+    property["zdepth"] = healpix_photometry(healpix_all, z_depth, healpix, all_count)
+    property["ydepth"] = healpix_photometry(healpix_all, y_depth, healpix, all_count)
+
+    ########get star
+    star_pixel = healpix_all[(i_cmodel - i_psf > -0.08)&(i_cmodel<22.0)]
+    star_count = np.bincount(star_pixel, minlength=npix)
+    property["star"] = star_count[healpix]/eff_area
+
+    star1_pixel = healpix_all[(i_cmodel - i_psf > -0.05)&(i_cmodel<22.0)]
+    star1_count = np.bincount(star1_pixel, minlength=npix)
+    property["star1"] = star1_count[healpix]/eff_area
+
+    star2_pixel = healpix_all[(i_cmodel - i_psf > -0.03)&(i_cmodel<22.0)]
+    star2_count = np.bincount(star2_pixel, minlength=npix)
+    property["star2"] = star2_count[healpix]/eff_area
+
+    star3_pixel = healpix_all[(i_cmodel - i_psf > -0.01)&(i_cmodel<22.0)]
+    star3_count = np.bincount(star3_pixel, minlength=npix)
+    property["star3"] = star3_count[healpix]/eff_area
+    print("Get stellar density")
+    ################extinction
+    hdu = fits.open('csfd_ebv.fits')
+    data = hdu[1].data
+    im=data["T"]
+    m = np.ndarray.flatten(im)
+    im = hp.ud_grade(m, nside)
+    property["extinction"] = im[healpix]
+    print("Get dust extinction")
+    ##########################################################
+
+    val = list(property.values())
+    val.append(list(density))
+    val.append(list(healpix))
+    val.append(list(mask_edge))
+
+    nam = list(property.keys())
+    nam_all = tuple(nam + ["density" , "healpix", "edge_flag"])
+    t = Table(val, names=nam_all)
+    t.write("property_new.fits", format='fits', overwrite = True)
+
     fig = plt.figure(figsize = (18,6))
-    i = 0
+
+    i = 1
+    print("Get plots")
+    ax1 = fig.add_subplot(2,6,1)
+    ax1.set_xlabel("stellar density [deg-2]")
+    ax1.set_title("stellar density")
     for k,v in property.items():
-        if (k == "stars"):
-            histogram(fig, density[mask_edge],k[mask_edge],v,i)
+        if ("star" in k):
+            histogram_star(fig, density[mask_edge], np.array(v)[mask_edge], ax1)
         else:
             i+=1
-            histogram(fig, density[mask_edge],k[mask_edge],v,i)
+            histogram(fig, density[mask_edge],k,np.array(v)[mask_edge],i)
 
 
     fig.subplots_adjust(hspace=0.5, wspace=0.5)
     plt.tight_layout()
     pdf.savefig(fig)
     pdf.close()
-    
-    return
-        
-        
 
+        
+        
+def histogram_star(fig, dens,value, ax):
+    x = rangex["star"]
+    number = []
+    mean_density =[]
+    SD_density = []
+    x1 = []
+
+    #propertyごとにhealpixをわけてmean density, SD, number of healpix　を計算
+    for i in range(len(x)-1):
+        healpix = (x[i]<=value)&(value<x[i+1])
+        number.append(np.sum(healpix))
+        mean_density.append(np.average(dens[healpix]))
+        SD_density.append(np.std(dens[healpix]))
+
+        x1.append((x[i]+x[i+1])/2)
+
+    x1 = np.array(x1)
+    number = np.array(number)
+    mean_density = np.array(mean_density)[number>100]
+    SD_density = np.array(SD_density)[number>100]
+    density_ave = np.average(mean_density)
+    print(mean_density/density_ave)
+    
+    ax.errorbar(x1[number>100],mean_density/density_ave - 1.0,yerr = SD_density/density_ave ,fmt = "o")
+    ax.plot(x1[number>100], mean_density/density_ave - 1.0)
+    ax1 = ax.twinx()
+    ax1.hist(value, bins=20, range =(np.min(x1[number>100]),np.max(x1[number>100])), weights=[1/len(value)]*len(value))
+    ax.set_ylim(-0.5,0.5)
+    ax1.set_ylim(0.0,1.0)
+    ax1.tick_params(labelright=False)
+    return
+    
 
 def histogram(fig, dens,key,value,i):
-    ax = fig.add_subplot(2,6,i)
+    print(dens)
     if "seeing" in key:
+        ax = fig.add_subplot(2,6,i)
         x = rangex["size"]
         if key == "gseeing":
             ax.set_xlabel("gband psf size")
@@ -430,6 +399,7 @@ def histogram(fig, dens,key,value,i):
             ax.set_xlabel("yband psf size")
             ax.set_title("yband psf size [arcsec]")
     elif "depth" in key:
+        ax = fig.add_subplot(2,6,i)
         x = rangex["depth"]
         if key == "gdepth":
             ax.set_xlabel("gband depth")
@@ -447,14 +417,11 @@ def histogram(fig, dens,key,value,i):
             ax.set_xlabel("yband depth")
             ax.set_title("yband depth [mag]")
     elif "extinction" in key:
+        ax = fig.add_subplot(2,6,i)
         x = rangex["extinction"]
         ax.set_xlabel("E(B-V)")
         ax.set_title("dust extinction")
-    elif key == "star":
-        x = rangex["star"]
-        ax.set_xlabel("stellar density [deg-2]")
-        ax.set_title("stellar density")
-    
+
     number = []
     mean_density =[]
     SD_density = []
@@ -514,71 +481,101 @@ def download(tract):
     del fileOut
     return
 
-def healpix_photometry(all_pixel, eff, tract, healpix, photo):
-    if "seeing" in photo:
-        hdu = fits.open("database/s21-colorterm/tracts_all/%s_bias.fits" %tract)
-        data = hdu[1].data
-        if photo=="gseeing":
-            g_size = data["gseeing"]
-            photo_galaxy = g_size[all_pixel == healpix]
-        elif photo=="rseeing":
-            r_size = data["rseeing"]
-            photo_galaxy = r_size[all_pixel == healpix]
-        elif photo=="iseeing":
-            i_size = data["iseeing"]
-            photo_galaxy = i_size[all_pixel == healpix]
-        elif photo=="zseeing":
-            z_size = data["zseeing"]
-            photo_galaxy = z_size[all_pixel == healpix]
-        elif photo=="yseeing":
-            y_size = data["yseeing"]
-            photo_galaxy = y_size[all_pixel == healpix]
+def healpix_photometry(healpix_all, photometry, healpix, count):
+    print("calculating photometry")
+    # 各healpix_targetのカウント（点の数）を取得
+    npix = hp.nside2npix(nside)
+    _property = np.bincount(healpix_all, weights=photometry, minlength=npix)
+    Property = _property[healpix]/count[healpix]
+    return Property
 
-        a = np.average(photo_galaxy)
-        hdu.close()
+def process_sql(sql_num):
+    file = f"database/s21-colorterm/sql_all/{sql_num}_bias.fits"
+    print(file)
+    if os.path.exists(file):
+        with fits.open(file) as hdu:
+            data = hdu[1].data
+            ra = data["i_ra"]
+            dec = data["i_dec"]
+            i_cmodel = data["meas_i_cmodel_mag"]
+            i_psf = data["meas_i_psfflux_mag"]
 
-    elif "depth" in photo:
-        hdu = fits.open("database/s21-colorterm/tracts_all/%s_bias.fits" %tract)
-        data = hdu[1].data
-        if photo == "gdepth":
+            g_seeing = data["gseeing"]
+            r_seeing = data["rseeing"]
+            i_seeing = data["iseeing"]
+            z_seeing = data["zseeing"]
+            y_seeing = data["yseeing"]
+
             g_depth = data["g_depth"]
-            photo_galaxy = g_depth[all_pixel == healpix]
-        elif photo == "rdepth":
             r_depth = data["r_depth"]
-            photo_galaxy = r_depth[all_pixel == healpix]
-        elif photo == "idepth":
             i_depth = data["i_depth"]
-            photo_galaxy = i_depth[all_pixel == healpix]
-        elif photo == "zdepth":
             z_depth = data["z_depth"]
-            photo_galaxy = z_depth[all_pixel == healpix]
-        elif photo == "ydepth":
             y_depth = data["y_depth"]
-            photo_galaxy = y_depth[all_pixel == healpix]
-            
-        a = np.average(photo_galaxy)
-        hdu.close()
+
+            return ra, dec, i_cmodel, i_psf, g_seeing, r_seeing, i_seeing, z_seeing, y_seeing, g_depth, r_depth, i_depth, z_depth, y_depth
+    return None
+
+def process_tract(tract):
+    file = f"database/s21-colorterm/tracts_all/{tract}_bias.fits"
+    print(file)
+    if os.path.exists(file):
+        with fits.open(file) as hdu:
+            data = hdu[1].data
+            ra = data["i_ra"]
+            dec = data["i_dec"]
+            i_cmodel = data["meas_i_cmodel_mag"]
+            i_psf = data["meas_i_psfflux_mag"]
+
+            g_seeing = data["gseeing"]
+            r_seeing = data["rseeing"]
+            i_seeing = data["iseeing"]
+            z_seeing = data["zseeing"]
+            y_seeing = data["yseeing"]
+
+            g_depth = data["g_depth"]
+            r_depth = data["r_depth"]
+            i_depth = data["i_depth"]
+            z_depth = data["z_depth"]
+            y_depth = data["y_depth"]
+
+            return ra, dec, i_cmodel, i_psf, g_seeing, r_seeing, i_seeing, z_seeing, y_seeing, g_depth, r_depth, i_depth, z_depth, y_depth
+    return None
+
+def Get_Photometry(sql):
+    with Pool(processes=20) as pool:  # Adjust number of processes based on your CPU
+        results = pool.map(process_sql, sql)
         
-    elif (photo == "star"):
-        a = np.sum(star_pixel == healpix)/eff
+    #results = []
+    #with ProcessPoolExecutor() as executor:
+        #futures = [executor.submit(process_file, sql_num) for sql_num in sql]
+        #for future in futures:
+            #result = future.result()
+            #if result:
+                #results.append(result)
 
-    elif (photo == "star1"):
-        a = np.sum(star_pixel1 == healpix)/eff
+    # Flatten results
+    ra, dec, i_cmodel, i_psf, g_seeing, r_seeing, i_seeing, z_seeing, y_seeing, g_depth, r_depth, i_depth, z_depth, y_depth = map(np.concatenate, zip(*results))
 
-    elif (photo == "star2"):
-        a = np.sum(star_pixel2 == healpix)/eff
+    # Write results to a file
+    return ra, dec, i_cmodel, i_psf, g_seeing, r_seeing, i_seeing, z_seeing, y_seeing, g_depth, r_depth, i_depth, z_depth, y_depth
 
-    elif (photo == "star3"):
-        a = np.sum(star_pixel3 == healpix)/eff
+def Get_Photometry_tract(tract_list):
+    with Pool(processes=20) as pool:  # Adjust number of processes based on your CPU
+        results = pool.map(process_tract, tract_list)
+        
+    #results = []
+    #with ProcessPoolExecutor() as executor:
+        #futures = [executor.submit(process_file, sql_num) for sql_num in sql]
+        #for future in futures:
+            #result = future.result()
+            #if result:
+                #results.append(result)
 
-    elif (photo == "extinction"):
-        hdu = fits.open('csfd_ebv.fits')
-        data = hdu[1].data
-        im=data["T"]
-        m = np.ndarray.flatten(im)
-        im = hp.ud_grade(m, nside)
-        a = im[healpix]
-    return a
+    # Flatten results
+    ra, dec, i_cmodel, i_psf, g_seeing, r_seeing, i_seeing, z_seeing, y_seeing, g_depth, r_depth, i_depth, z_depth, y_depth = map(np.concatenate, zip(*results))
+
+    # Write results to a file
+    return ra, dec, i_cmodel, i_psf, g_seeing, r_seeing, i_seeing, z_seeing, y_seeing, g_depth, r_depth, i_depth, z_depth, y_depth
 
 
 
